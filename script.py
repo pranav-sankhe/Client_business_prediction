@@ -1,147 +1,178 @@
-import numpy as np 
-import os 
-import matplotlib.pyplot as plt
-import pandas as pd 
-import fuzzywuzzy
-from fuzzywuzzy import fuzz
-from fuzzywuzzy import process
+"""
+Train Input Format:
+{
+    "file": "data.csv",
+    "columnName" : {"amount": "amount(In Cr.)", "time": ["customer_creation_date","meeting_date" ]}
+}
+
+File Format:
+Display Name    Job Title   City    State or Province   ZIP or Postal Code  Country or Region   Deal Closure
+Chris Green     IT Manager  Redmond Wa                  98052               United States       5
+
+
+Predict Input Format:
+{
+    "file": "test.csv"
+}
+"""
+import pandas as pd
+import numpy as np
+from sklearn import datasets, linear_model, preprocessing
+from collections import defaultdict
+from sklearn.externals import joblib
+from sklearn import svm
+import re
 from datetime import datetime
-import itertools as it
-#checking the type of file
-path = os.getcwd() + '/testdata.csv'
 
 
-def file_type():
-    extension = os.path.splitext(os.path.basename(path))[1] 
+
+def pinCode(x):
+    var = ''
+    if type(x) == float:
+        var = ''
+    else:
+        l = re.findall('\d+',x)
+        for i in l:
+            if len(i) == 6:
+                var = i 
+    return var      
+
+def turnoverTime(x,start_date):
+    for date in start_date:
+        diff = abs(x - date).days
+        return diff
     
-    extensions = ['.txt', '.csv', 'xlsx' ]
+def train(input):
+    # input = {"file": "data.csv", "predict": "Time"}
+    print input
+
+    d = defaultdict(preprocessing.LabelEncoder)
+    # def train(input):
+    fileName = input['file']
+    amountColumn = input["columnName"]["amount"]
+    timeColumn = input['columnName']['time']
+    #predictCol = input['predict'] 
+    data = pd.read_csv(fileName)
     
-    if extension == extensions[0]:
-        return 0
-    if extension == extensions[1]:
-        return 1 
-    if extension == extensions[2]:
-        return 2 
+    # if((input)['predict'] == 'amount(In Cr.)'):
+        
+    amountPredictColumn = amountColumn
 
-def str2int(s, chars):
-    i = 0
-    for c in reversed(s):
-        i *= len(chars)
-        i += chars.index(c)
-    return i
+    trainCols = [col for col in data.columns if col not in [amountPredictColumn] and col not in 'customer_id']
+    X_amount = data[trainCols]
+    fitX_amount = X_amount 
 
-chars = "".join(str(n) for n in range(10)) + "ABCDEFGHIJKLMNOPQRSTUVWXYZ-"
+    fitX_amount['address_company'] = fitX_amount['address_company'].apply(pinCode)  
+    
+    del fitX_amount['meeting_date']
+    del fitX_amount['customer_creation_date']
+
+    
+    fitX_amount = fitX_amount.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int or x.dtype ==  'datetime64') else d[x.name].fit_transform(x))
+    fitX_amount = fitX_amount.astype(float)
+    
+    
+    Y_amount = data[amountPredictColumn].astype(int)
+    
+    
+    '''
+    # Create linear regression object
+    regr = linear_model.LinearRegression()
+
+    # Train the model using the training sets
+    regr.fit(fitX, Y)
+    '''
+    clf = svm.SVC()
+    clf.fit(fitX_amount, Y_amount)
+
+    joblib.dump(clf, 'amount.pkl')
+    joblib.dump(d, 'amountd.pkl')
+    
     
 
-def load_data():
-    if file_type() == 0|1:
-        data = pd.read_csv(path, delimiter=None, header='infer')
-
-        namelist = data.columns.values.tolist()
-        
-
-        id_match = np.zeros(len(namelist))
-        amount_match = np.zeros(len(namelist))
-        turnoverTime_match = np.zeros(len(namelist))
-        create_date_match = np.zeros(len(namelist))
-        meet_date_match = np.zeros(len(namelist))
-        
-        for i in range(len(namelist)):
-            id_match[i] = fuzz.token_set_ratio("id",namelist[i])
-        
-            amount_match[i] = max(fuzz.token_set_ratio("total",namelist[i]),fuzz.token_set_ratio("amount",namelist[i]))
-            #turnoverTime_match = fuzz.token_set_ratio("",namelist[i])
-            create_date_match[i] =  max(fuzz.token_set_ratio("creation",namelist[i]), fuzz.token_set_ratio("start",namelist[i]))
-            meet_date_match[i] = max(fuzz.token_set_ratio("meeting",namelist[i]),fuzz.token_set_ratio("customer meeting",namelist[i]) )
-            
-            customer_id_index = np.argmax(id_match, axis=None, out=None)
-            amount_index =  np.argmax(amount_match, axis=None, out=None)
-            create_date_index = np.argmax(create_date_match, axis=None, out=None)
-            meet_date_index = np.argmax(meet_date_match, axis=None, out=None)
-            
-        
-        customer_id = data.iloc[:,customer_id_index:customer_id_index+1]
-        amount = data.iloc[:,amount_index:amount_index+1]
-        create_date =  data.iloc[:,create_date_index:create_date_index+1]
-        meet_date = data.iloc[:,meet_date_index:meet_date_index+1]
-        
-        return customer_id, amount, create_date, meet_date,namelist
 
 
+# if((input)['predict'] == 'turnoverTime'):
+    
+    trainCols = ['company_name', 'group_key_promoters','activity_company','address_company']
+    X_time = data[trainCols]
+    
+    predictColumns = timeColumn
+    
+    X_time['address_company'] = X_time['address_company'].apply(pinCode)
+    
+    fitX_time = X_time.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int) else d[x.name].fit_transform(x))
+    fitX_time = fitX_time.astype(float)
+    
+    fitY_time = data[predictColumns]
+    fitY_time['customer_creation_date'] = fitY_time['customer_creation_date'].apply(lambda x: datetime.strptime((x.split(" ")[0]), "%Y/%m/%d"))
+    fitY_time['meeting_date'] = fitY_time['meeting_date'].apply(lambda x: datetime.strptime((x), "%Y/%m/%d"))
+    
+    Y_time = fitY_time['meeting_date'] - fitY_time['customer_creation_date']
+    
+    #X['turnoverTime'] = X['turnoverTime'].apply(lambda x: int(x))
+    Y_time = Y_time.apply(lambda x: 0 if ( int(x) <0 ) else x )#.astype(int)
+    
+    '''
+    # Create linear regression object
+    regr = linear_model.LinearRegression()
 
-startdate_array = load_data()[2].as_matrix()
-meetdate_array =  load_data()[3].as_matrix()
+    # Train the model using the training sets
+    regr.fit(fitX, Y)
+    '''
+    clf = svm.SVC()
+    clf.fit(fitX_time, Y_time)
 
-turnoverTime = np.zeros(len(startdate_array))
-
-
-#print(startdate_array[0,:][0])
-
-
-try:
-    for i in range(max(len(startdate_array), len(meetdate_array) )):  
-        d1 = datetime.strptime((startdate_array[i,:][0].split(" ")[0]), "%Y/%m/%d")
-        d2 = datetime.strptime((meetdate_array[i,:][0]), "%Y/%m/%d")
-        turnoverTime[i] = abs((d2 - d1).days)  
-except AttributeError:
-    pass
-
-
-
-customer_id = load_data()[0].as_matrix() 
-amount = load_data()[1].as_matrix()
-amount_mean =np.mean(amount) 
-amount_var = np.std(amount)
-amount = (amount - np.mean(amount) )/ np.std(amount)
-
-for i in range(len(customer_id)):
-    customer_id[i] = str2int(customer_id[i,:][0], chars) 
-
- 
-customer_id = (customer_id - np.mean(customer_id)) / np.std(customer_id)
-
-turnoverTime_mean = np.mean(turnoverTime)
-turnoverTime_var = np.std(turnoverTime)
-turnoverTime =  (turnoverTime - np.mean(turnoverTime)) / np.std(turnoverTime)
-
-theta = np.matrix(np.array([0,0]))
-X = np.column_stack((np.ones(len(customer_id)), customer_id) )
+    joblib.dump(clf, 'time.pkl')
+    joblib.dump(d, 'timed.pkl')
+    
+    return clf.support_vectors_.tolist()        
 
 
-def computeCost(X, y, theta):                                                   
-    inner = np.power(((X * theta.T) - y), 2)
-    return np.sum(inner) / (2 * len(X))
+def predict(input):
+    
+    clf_amount = joblib.load('amount.pkl')
+    d = joblib.load('amountd.pkl')
+    fileName = input['file']
+    data = pd.read_csv(fileName)
+    
+    trainCols = ['company_name', 'group_key_promoters','activity_company','address_company']
+    data = data[trainCols]
+    data['address_company'] = data['address_company'].apply(pinCode)
+    fit_amount = data.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int or x.dtype == 'datetime64') else d[x.name].fit_transform(x))
+    
+    # print(clf_amount.predict(fit_amount))
+    
 
 
- 
-def gradientDescent(X, y, theta, alpha, iters):  
-    temp = np.matrix(np.zeros(theta.shape))
-    parameters = int(theta.ravel().shape[1])
-    cost = np.zeros(iters)
+    clf_time = joblib.load('time.pkl')
+    d = joblib.load('timed.pkl')
+    fileName = input['file']
+    data = pd.read_csv(fileName)
+    trainCols = ['company_name', 'group_key_promoters','activity_company','address_company']
+    data = data[trainCols]
+    data['address_company'] = data['address_company'].apply(pinCode)
+    fit_time = data.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int or x.dtype == 'datetime64') else d[x.name].fit_transform(x))
+    
+    pred_amount = clf_amount.predict(fit_amount)
+    pred_time = clf_time.predict(fit_time)
 
-    for i in range(iters):
-        error = (X * theta.T) - y
+    pred_times = np.ones(len(pred_time))
+    for i in range(len(pred_time)):
+        x = np.timedelta64(pred_time[i], 'D')
+        days = x
+        pred_times[i] = days / np.timedelta64(1, 'D')
+    obj = []
+    
+    for i in range(len(clf_amount.predict(fit_amount))):
+        obj.append({"amount": float(pred_amount[i]),"time":float(pred_times[i])})
 
-        for j in range(parameters):
-            term = np.multiply(error, X[:,j])
-            temp[0,j] = theta[0,j] - ((alpha / len(X)) * np.sum(term))
-
-        theta = temp
-        cost[i] = computeCost(X, y, theta)
-
-    return theta, cost
-
-alpha = 0.01       #learning rate  
-iters = 1000      #no. of iterations
-g_turnoverTime, cost_turnoverTime = gradientDescent(X, turnoverTime, theta, alpha, iters)
-g_amount, cost_amount = gradientDescent(X, amount, theta, alpha, iters)
-
-x = np.linspace(np.amin(X[:,1]), np.amax(X[:,1]), 100)
+    #print(clf_amount.predict(fit_amount).shape, )  
+    #result = np.column_stack((clf_amount.predict(fit_amount),clf_time.predict(fit_time)))
+    
+    return obj
 
 
-f_turnoverTime = g_turnoverTime[0,0] + g_turnoverTime[0,1]*x
-f_amount =  g_amount[0,0] + g_amount[0,0]*x  
-result_turnover_time = f_turnoverTime*turnoverTime_var + turnoverTime_mean
-result_amount = f_amount*amount_var + amount_mean
-
+# train({"file": "/home/pranav/Documents/my_projects/customer-time-buisness-prediction/data/testdata.csv",    "columnName" : {"amount": "amount(In Cr.)", "time": ["customer_creation_date","meeting_date" ]} })
+# print(predict({"file": "/home/pranav/Documents/my_projects/customer-time-buisness-prediction/data/testAmount.csv"}))
 
