@@ -173,6 +173,6 @@ def predict(input):
 	return obj
 
 
-train({"file": "/home/pranav/Documents/my_projects/leadscore/leadscore_data/testdata.csv", 	"columnName" : {"amount": "amount(In Cr.)", "time": ["customer_creation_date","meeting_date" ]}	})
-print(predict({"file": "/home/pranav/Documents/my_projects/leadscore/leadscore_data/testAmount.csv"}))
+train({"file": "/home/pranav/Documents/my_projects/arrowAI/leadscore/leadscore_data/testdata.csv", 	"columnName" : {"amount": "amount(In Cr.)", "time": ["customer_creation_date","meeting_date" ]}	})
+print(predict({"file": "/home/pranav/Documents/my_projects/arrowAI/leadscore/leadscore_data/testAmount.csv"}))
 
