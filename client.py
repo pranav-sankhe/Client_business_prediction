@@ -1,178 +1,243 @@
-"""
-Train Input Format:
-{
-	"file": "data.csv",
-	"columnName" : {"amount": "amount(In Cr.)", "time": ["customer_creation_date","meeting_date" ]}
-}
-
-File Format:
-Display Name	Job Title	City	State or Province	ZIP or Postal Code	Country or Region	Deal Closure
-Chris Green		IT Manager	Redmond	Wa					98052				United States		5
-
-
-Predict Input Format:
-{
-	"file": "test.csv"
-}
-"""
+import urllib
+import urllib2
 import pandas as pd
-import numpy as np
-from sklearn import datasets, linear_model, preprocessing
-from collections import defaultdict
+import json 
 from sklearn.externals import joblib
 from sklearn import svm
-import re
-from datetime import datetime
-
-
-
-def pinCode(x):
-	var = ''
-	if type(x) == float:
-		var = ''
-	else:
-		l = re.findall('\d+',x)
-		for i in l:
-			if len(i) == 6:
-				var = i 
-	return var		
-
-def turnoverTime(x,start_date):
-	for date in start_date:
-		diff = abs(x - date).days
-		return diff
+import schedule
+import time
 	
-def train(input):
-	# input = {"file": "data.csv", "predict": "Time"}
-	print input
+prev_length = 0 	
 
-	d = defaultdict(preprocessing.LabelEncoder)
-	# def train(input):
-	fileName = input['file']
-	amountColumn = input["columnName"]["amount"]
-	timeColumn = input['columnName']['time']
-	#predictCol = input['predict'] 
-	data = pd.read_csv(fileName)
+def account_id(account_dict,deal_dict):
+	account_dict = account_dict['response']['result']['Accounts']['row']
+ 	deal_dict = deal_dict['response']['result']['Accounts']['row']
+
+ 	l = []
+
+ 	for i in range(len(deal_dict)):
+		for j in  range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Stage':
+				if deal_dict[i]['FL'][j]['content'] == 'Closed (Won)' :
+					for l in range(len(account_dict[i]['FL'])):
+						if account_dict[i]['FL'][l]['val'] == 'ACCOUNTID':
+							l.append(account_dict[i]['FL'][l]['content'])
+
+	return l
+def pred_account_id(account_dict,deal_dict):
+	account_dict = account_dict['response']['result']['Accounts']['row']
+ 	deal_dict = deal_dict['response']['result']['Accounts']['row']
+
+ 	l = []
+
+ 	for i in range(len(deal_dict)):
+		for j in  range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Stage':
+				if deal_dict[i]['FL'][j]['content'] != 'Closed (Won)' :
+					for l in range(len(account_dict[i]['FL'])):
+						if account_dict[i]['FL'][l]['val'] == 'ACCOUNTID':
+							l.append(account_dict[i]['FL'][l]['content'])
+
+	return l
+
+def ann_revenue(account_dict,deal_dict):
+	account_dict = account_dict['response']['result']['Accounts']['row']
+	l = []
+
+ 	for i in range(len(deal_dict)):
+		for j in  range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Stage':
+				if deal_dict[i]['FL'][j]['content'] == 'Closed (Won)' :
+					for l in range(len(account_dict[i]['FL'])):
+						if account_dict[i]['FL'][l]['val'] == 'Annual Revenue':
+							l.append(account_dict[i]['FL'][l]['content'])
+
+	return l 			
+def pred_revenue(account_dict,deal_dict):
+	account_dict = account_dict['response']['result']['Accounts']['row']
+	l = []
+
+ 	for i in range(len(deal_dict)):
+		for j in  range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Stage':
+				if deal_dict[i]['FL'][j]['content'] != 'Closed (Won)' :
+					for l in range(len(account_dict[i]['FL'])):
+						if account_dict[i]['FL'][l]['val'] == 'Annual Revenue':
+							l.append(account_dict[i]['FL'][l]['content'])
+
+	return l 				
+
+def location(account_dict,deal_dict):
+	account_dict = account_dict['response']['result']['Accounts']['row']
+	l = []
+
+ 	for i in range(len(deal_dict)):
+		for j in  range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Stage':
+				if deal_dict[i]['FL'][j]['content'] == 'Closed (Won)' :
+					for l in range(len(account_dict[i]['FL'])):
+						if account_dict[i]['FL'][l]['val'] == 'Annual Revenue':
+							code = account_dict[i]['FL'][l]['content']
+							pincode = int(code[0] + code[1])
+							l.append(pincode)
+	return l 
+def pred_location(account_dict,deal_dict):
+	account_dict = account_dict['response']['result']['Accounts']['row']
+	l = []
+
+ 	for i in range(len(deal_dict)):
+		for j in  range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Stage':
+				if deal_dict[i]['FL'][j]['content'] != 'Closed (Won)' :
+					for l in range(len(account_dict[i]['FL'])):
+						if account_dict[i]['FL'][l]['val'] == 'Annual Revenue':
+							code = account_dict[i]['FL'][l]['content']
+							pincode = int(code[0] + code[1])
+							l.append(pincode)
+	return l 
+
+def amount(deal_dict):
+	deal_dict = deal_dict['response']['result']['Deals']['row']
+	l = []
+	for i in range(len(deal_dict)):
+		for j in range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Amount':
+				l.append(deal_dict[i]['FL'][j]['content'])
+	return l 				
+def turnaround_Time(deal_dict):
+	deal_dict = deal_dict['response']['result']['Deals']['row']
+	l = []
+	for i in range(len(deal_dict)):
+		for j in range(len(deal_dict[i]['FL'])):
+			if deal_dict[i]['FL'][j]['val'] == 'Sales Cycle Duration':
+				l.append(deal_dict[i]['FL'][j]['content'])
+	return l 			
+def deal_status(deal_dict):
+	deal_dict = deal_dict['response']['result']['Deals']['row']
 	
-	# if((input)['predict'] == 'amount(In Cr.)'):
+	
+	for j in range(len(deal_dict[0]['FL'])):
+		if deal_dict[0]['FL'][j]['val'] == 'Stage':
+			l = deal_dict[0]['FL'][j]['content'] 
+	return l 				
+
+def request_account_data(token):
+	module_name = 'Accounts'
+	authtoken = token
+	params = {'authtoken':authtoken,'scope':'crmapi'}      
+	final_URL = "https://crm.zoho.com/crm/private/json/"+module_name+"/getRecords"
+	data = urllib.urlencode(params)
+	request = urllib2.Request(final_URL,data)
+	response = urllib2.urlopen(request)
+	json_response = response.read()
+	d = json.loads(json_response)
+	return d
+def request_deals_data(token):
+	module_name = 'Deals'
+	authtoken = token
+	params = {'authtoken':authtoken,'scope':'crmapi'}
+	final_URL = "https://crm.zoho.com/crm/private/json/"+module_name+"/getRecords"
+	data = urllib.urlencode(params)
+	request = urllib2.Request(final_URL,data)
+	response = urllib2.urlopen(request)
+	json_response = response.read()
+	d = json.loads(json_response)
+	return d
+
+	#def add_account(token):
+def request_leads_data(token):
+	module_name = 'Leads'
+	authtoken = token
+	params = {'authtoken':authtoken,'scope':'crmapi'}
+	final_URL = "https://crm.zoho.com/crm/private/json/"+module_name+"/getRecords"
+	data = urllib.urlencode(params)
+	request = urllib2.Request(final_URL,data)
+	response = urllib2.urlopen(request)
+	json_response = response.read()
+	d = json.loads(json_response)
+	return d
+
+def predict(Input):
+
+	token  = Input
+	
+	#----------------------------------
+	#    Get data via zoho api 	
+	account_d = request_account_data(token)
+	deal_d = request_deals_data(token)
+	global prev_length
+	length = len(deal_d)
+	
+	if length > prev_length:
+
+		val = length - prev_length
+		#------------------------------------------
+		#            Training Data
+
+		acc_ids = account_id(account_d,deal_d)
+		cust_revenue = ann_revenue(account_d,deal_d)    
+		locate = location(account_d,deal_d)
+
+		#------------------------------------------
+		#			Values to be predicted
+		b_amount = amount(deal_d)
+		tTime = turnaround_Time(deal_d)
+
+		fitX = pd.DataFrame(
+	    {'revenue': cust_revenue,
+	     'location': locate
+	    })
+
+
 		
-	amountPredictColumn = amountColumn
+		clf_time = svm.SVC()
+		clf.fit(fitX, tTime)
+		
+		clf_amount = svm.SVC()
+		clf.fit(fitX, b_amount)
+		
+		
 
-	trainCols = [col for col in data.columns if col not in [amountPredictColumn] and col not in 'customer_id']
-	X_amount = data[trainCols]
-	fitX_amount = X_amount 
-
-	fitX_amount['address_company'] = fitX_amount['address_company'].apply(pinCode)	
+		revenue = []
+		pLocation = [] 
+		pAccount =[]
+		for i in range(length - prev_length):
+			revenue.append(pred_revenue(account_d,deal_d))
+			cLocation.append(pred_location(account_d,deal_d))
+			pAccount.append(pred_location(account_d,deal_d))
+		
 	
-	del fitX_amount['meeting_date']
-	del fitX_amount['customer_creation_date']
-
-	
-	fitX_amount = fitX_amount.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int or x.dtype ==  'datetime64') else d[x.name].fit_transform(x))
-	fitX_amount = fitX_amount.astype(float)
-	
-	
-	Y_amount = data[amountPredictColumn].astype(int)
-	
-	
-	'''
-	# Create linear regression object
-	regr = linear_model.LinearRegression()
-
-	# Train the model using the training sets
-	regr.fit(fitX, Y)
-	'''
-	clf = svm.SVC()
-	clf.fit(fitX_amount, Y_amount)
-
-	joblib.dump(clf, 'amount.pkl')
-	joblib.dump(d, 'amountd.pkl')
-	
-	
+		pred_data = pd.DataFrame(
+			{ 'revenue' : revenue,
+			  'location' : cLocation
+			}
+			)
 
 
+		
+		pred_amount = clf_amount.predict(pred_data) 
+		pred_time =  clf_time.predict(pred_data) 
+		
+		dataframe = pd.DataFrame(
 
-# if((input)['predict'] == 'turnoverTime'):
-	
-	trainCols = ['company_name', 'group_key_promoters','activity_company','address_company']
-	X_time = data[trainCols]
-	
-	predictColumns = timeColumn
-	
-	X_time['address_company'] = X_time['address_company'].apply(pinCode)
-	
-	fitX_time = X_time.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int) else d[x.name].fit_transform(x))
-	fitX_time = fitX_time.astype(float)
-	
-	fitY_time = data[predictColumns]
-	fitY_time['customer_creation_date'] = fitY_time['customer_creation_date'].apply(lambda x: datetime.strptime((x.split(" ")[0]), "%Y/%m/%d"))
-	fitY_time['meeting_date'] = fitY_time['meeting_date'].apply(lambda x: datetime.strptime((x), "%Y/%m/%d"))
-	
-	Y_time = fitY_time['meeting_date'] - fitY_time['customer_creation_date']
-	
-	#X['turnoverTime'] = X['turnoverTime'].apply(lambda x: int(x))
-	Y_time = Y_time.apply(lambda x: 0 if ( int(x) <0 ) else x )#.astype(int)
-	
-	'''
-	# Create linear regression object
-	regr = linear_model.LinearRegression()
+			{ 'accounID' : pAccount,
+			 'buisness amount' : pred_amount,
+			  'Turnaround time' : pred_time 	
+			}
+			)
 
-	# Train the model using the training sets
-	regr.fit(fitX, Y)
-	'''
-	clf = svm.SVC()
-	clf.fit(fitX_time, Y_time)
+		prev_length = length
+		
+		if val > 0 :
+			print dataframe 	
+		else: 
+			print "no new entries"
 
-	joblib.dump(clf, 'time.pkl')
-	joblib.dump(d, 'timed.pkl')
-	
-	return clf.support_vectors_.tolist() 		
+def main(token):
+	schedule.every(10).minutes.do(predict,token)
 
+	while True:
+		schedule.run_pending()
+		time.sleep(1)
 
-def predict(input):
-	
-	clf_amount = joblib.load('amount.pkl')
-	d = joblib.load('amountd.pkl')
-	fileName = input['file']
-	data = pd.read_csv(fileName)
-	
-	trainCols = ['company_name', 'group_key_promoters','activity_company','address_company']
-	data = data[trainCols]
-	data['address_company'] = data['address_company'].apply(pinCode)
-	fit_amount = data.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int or x.dtype == 'datetime64') else d[x.name].fit_transform(x))
-	
-	# print(clf_amount.predict(fit_amount))
-	
-
-
-	clf_time = joblib.load('time.pkl')
-	d = joblib.load('timed.pkl')
-	fileName = input['file']
-	data = pd.read_csv(fileName)
-	trainCols = ['company_name', 'group_key_promoters','activity_company','address_company']
-	data = data[trainCols]
-	data['address_company'] = data['address_company'].apply(pinCode)
-	fit_time = data.apply(lambda x: x if (x.dtype == np.float64 or x.dtype == int or x.dtype == 'datetime64') else d[x.name].fit_transform(x))
-	
-	pred_amount = clf_amount.predict(fit_amount)
-	pred_time = clf_time.predict(fit_time)
-
-	pred_times = np.ones(len(pred_time))
-	for i in range(len(pred_time)):
-		x = np.timedelta64(pred_time[i], 'D')
- 		days = x
- 		pred_times[i] = days / np.timedelta64(1, 'D')
-	obj = []
-	
-	for i in range(len(clf_amount.predict(fit_amount))):
-		obj.append({"amount": float(pred_amount[i]),"time":float(pred_times[i])})
-
-	#print(clf_amount.predict(fit_amount).shape, )	
-	#result = np.column_stack((clf_amount.predict(fit_amount),clf_time.predict(fit_time)))
-	
-	return obj
-
-
-train({"file": "/home/pranav/Documents/my_projects/arrowAI/leadscore/leadscore_data/testdata.csv", 	"columnName" : {"amount": "amount(In Cr.)", "time": ["customer_creation_date","meeting_date" ]}	})
-print(predict({"file": "/home/pranav/Documents/my_projects/arrowAI/leadscore/leadscore_data/testAmount.csv"}))
-
+#authtoken = '16008ae53d03441f84c4b768303e70c4'
