@@ -6,7 +6,8 @@ from sklearn.externals import joblib
 from sklearn import svm
 import schedule
 import time
-	
+import MySQLdb
+
 prev_length = 0 	
 
 def account_id(account_dict,deal_dict):
@@ -229,15 +230,45 @@ def predict(Input):
 		prev_length = length
 		
 		if val > 0 :
-			print dataframe 	
+			return dataframe 	
 		else: 
-			print "no new entries"
+			return "no new entries"
+
+
+def getAllTokens():
+	# query DB for all tokens
+	db = MySQLdb.connect("http://localhost:8080/","user","password","TESTDB" )
+	cursor = db.cursor()	
+
+	query = "select email, token from auth_user"
+	
+	cursor.execute(query)
+	results = cursor.fetchall()
+
+	for result in results:
+		# execute predict with the result token
+		predictions = predict(result.token)
+		# send mail 
+		#http://arrowbot.net/rpc/channel/1c476c99-604b-4dce-9553-552e5a94e4aa/invoke?rcpt_to=ujj.shukla@gmail.com&subject=hello&body=hello
+		email = result.email
+		request = urllib2.Request("http://arrowbot.net/rpc/channel/1c476c99-604b-4dce-9553-552e5a94e4aa/invoke?rcpt_to=" + str(email) + "&subject="+ str(predictions))		
 
 def main(token):
-	schedule.every(10).minutes.do(predict,token)
+	
+	# Open database connection
+	# db = MySQLdb.connect("http://localhost:8080/","user","password","TESTDB" )
+	# cursor = db.cursor()	
+
+	# query = "select (email),(token) from auth_user"
+	
+	# cursor.execute(query)
+	# results = cursor.fetchall()
+
+
+	schedule.every(10).minutes.do(getAllTokens)
 
 	while True:
 		schedule.run_pending()
 		time.sleep(1)
 
-#authtoken = '16008ae53d03441f84c4b768303e70c4'
+
